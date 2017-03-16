@@ -1,0 +1,560 @@
+library('fractaldim')
+library('astsa')
+library('Matrix')
+num<-18	#WHY CAN THIS NOT GO BELOW 14, or 13? 
+s<-array(0,c(num,30)) ##price array
+snum <- array(0,c(num,30)) ##number of stocks invested
+pnum <- array(0,c(num,30)) ##cash flow, current value of stock historical
+##enable st.dev of stocks? (certain stocks will vary much less than others and some have a high mean) OR use real stocks as "training" data
+limit <- 10^2
+f<-array(0,c(num,7))
+newgens<-0
+orgs<-48
+start<-100*num
+amt<-array(start,c(orgs*3))
+tot<-array(0,c(orgs*3))
+org<-array(0,c(2+num,9,orgs))
+orgh<-array(0,c(orgs,30))
+forgh<<-array(1,c(orgs,14))
+tamt <- array(start,c(orgs*3))
+flag <- array(0,c(orgs*3))
+fac<-start/10^1
+graz<-array(0,c(2+num,15,orgs))
+grazh<-array(0,c(orgs,30))
+fgrazh<-array(1,c(orgs,14))
+tnkr<-array(0,c(2+num,15,orgs)) #thinkers, tinkerers
+tnkrh<-array(0,c(orgs,30))			#adaptive, creative, search all for strategy
+ftnkrh<-array(1,c(orgs,14))
+tmpsum1 <- 0
+tmpsum2 <- 0
+divfac1 <- 0 
+divfac2 <- 0
+for (i in 1:num) {
+	pnum[i,] <- cbind(runif(30))*fac^2
+	snum[i,] <- round(cbind(runif(30)))*fac+limit*10
+	s[i,] <- pnum[i,]/snum[i,]
+}
+###
+#increment factor array
+###
+up <- function(sd,numd) {
+	if(nnzero(sd[,],na.counted=FALSE)==30*numd) {
+		#print(nnzero(sd[,],na.counted=FALSE))
+	}
+	fl <- array(0,c(numd,7))
+	for (i in 1:numd) {
+		dif <- 0
+		sum <- 0
+		mean <- 0 #moving mean?
+		sig <- 0 
+		sumf <- 0
+		sumfu <- 0
+		for (j in 2:30) {
+			dif <- dif + sd[i,j] - sd[i,j-1]
+		}	
+		#print("dif ok")
+		if(nnzero(sd[,],na.counted=FALSE)==30*numd && abs(dif) > 10) {
+			b <- fd.estim.hallwood(sd[i,])
+			fl[i,1] <- b[[2]]/2
+			#print("box ok")
+			a <- spec.ar(sd[i,],plot=FALSE)
+			wt <- 0.5
+			leng<<-length(a[[2]])
+			#print(paste(paste("true",a[[2]][500]),b[[2]]/2))
+			for (j in 1:leng) {
+				wt <- wt-0.001*j
+				sumf <- sumf+as.vector(a[[2]][j])*wt
+				sumfu <- sumf+as.vector(a[[2]][j])
+				#print(paste(sumf,sumfu))
+				j <- j+100
+			}
+			#if(sumfu>0 && sumf>0) {
+			#	sumf <- sumf/sumfu
+			#}
+			#print("fft wt ok")
+			fl[i,2] <- sumfu/sumf
+			#print("fft assignment ok")
+		}
+		else{
+			c <- 0
+			fl[i,1] <- c
+			fl[i,2] <- c
+		}
+		sum <- sum(sd[i,])
+		#print("sum ok")
+		fl[i,3] <- mean
+		#print("mean ok")
+		fl[i,4] <- sig/sum#/mean
+		#print("sig ok")
+		fl[i,5] <- dif/sum #/30/30
+		#print("dif assign ok")
+		fl[i,6] <- sd[i,30]
+		#print("current assign ok")
+		fl[i,7] <- sd[i,29]
+		#print("last assign ok")
+	}
+	return(fl)
+}
+f<-up(s,num) #run once to fill factor table for prices
+
+##################
+#plants increment#
+##################
+or<-function(tl) {
+
+	if (tl>1) {
+		for (i in 1:orgs) { #sell all
+			if (flag[i] == 1) {
+				for (n in 1:num) {
+					tamt[i] <<- tamt[i]+org[2+n,7,i]*f[n,6] ##smarter trading, including realistic investment - can't invest what you don't have
+					flag[i] <<- 0
+				}
+			}
+		}
+		for (i in 1:orgs) { ##setup factors, first threshold then weighting
+			for (j in 1:2) {
+					org[j,1:5,i] <<- graz[j,1:5,i]
+			}
+		}
+	}
+	if(tl==1) {
+		for (i in 1:orgs) { ##setup factors, first threshold then weighting
+			for (j in 1:2) {
+					org[j,1:5,i] <<- cbind(runif(5))*cbind(runif(5))
+					forgh[j,8:12] <<- org[j,1:5,i]
+			}
+		}
+	}
+	for (k in 1:5) {
+		for (m in 1:orgs) {
+			tot[m]<<-0
+			for (n in 1:num) {
+				if ( f[n,k] > org[1,k,m] ) {
+					org[2+n,k,m] <<- as.numeric(org[2,k,m])*f[n,k]
+				}
+				if(k==5) {
+					org[2+n,6,m] <<- sum(org[2+n,1:5,m])
+					tot[m] <<- tot[m]+sum(org[2+n,1:5,m]) #is this working?
+				}
+			}
+		}			
+	}
+	for (m in 1:orgs) {
+		for (n in 1:num) {
+			org[2+n,9,m] <<- org[2+n,7,m]
+			if (round(org[2+n,6,m]/tot[m]*tamt[m]/s[n,29]) < limit) {
+				org[2+n,7,m] <<- round(org[2+n,6,m]/tot[m]*tamt[m]/s[n,29]) #decides how many based on yesterday
+			}
+			else {
+				org[2+n,7,m] <<- round(org[2+n,6,m]/tot[m]*limit)
+			}
+			org[2+n,8,m] <<- org[2+n,7,m]*s[n,30] #invests according to today's price
+		}
+		if (m == 1) {
+			#print("market value of stocks")
+			#print(sum(org[,7,1]*s[,29]))
+		}
+		amt[m] <<- 0
+		if (tamt[m] > sum(org[,8,m])*0.9 && tamt[m] > 0) {#sum(org[,8,m])) { #don't invest more than you have ##RISK ACCEPTANCE HERE, change to 0.8
+			#with the same risk factor, almost everyone jumps in at the same time, bringing the value of the stock down - like a real market. When all the orgs fail, it's a market crash
+			amt[m] <<- sum(org[,8,m])
+			tamt[m] <<- tamt[m]-amt[m]
+			flag[m] <<- 1
+			if (m == 1) {
+				print("total assets")
+				print(amt[m]+tamt[m])
+			}
+		}
+		else {
+			if (m == 1) {
+				print("tamt held")
+				print(tamt[m])
+			}
+		}
+		
+	}
+}
+
+###################
+#grazers increment#
+###################
+orsuper<-function(tl) {
+	if(tl==1) {
+		for (i in 1:orgs) { ##setup factors, first threshold then weighting
+			for (j in 1:2) {
+				graz[j,1:5,i] <<- cbind(runif(5))*cbind(runif(5)) #stock selection facs
+				graz[j,11:15,i] <<- cbind(runif(5))*cbind(runif(5)) #selection factors
+			}
+		}
+	}	
+	if (tl>1) {
+		for (i in 1:orgs) { #sell all
+			if (flag[i+orgs] == 1) {
+				for (n in 1:num) {
+					tamt[i+orgs] <<- tamt[i+orgs]+graz[2+n,7,i]*f[n,6]
+					flag[i+orgs] <<- 0
+				}
+			}
+			else {
+				for (j in 1:2) {
+					graz[j,round(runif(1,min=11,max=15)),i] <<- cbind(runif(1))*cbind(runif(1))
+					##if you're not selling, play with the strategy just a little. 	
+				}
+			}
+		}
+	}
+	###
+	#first update grass weights
+	###
+	for (k in 11:15) {
+		for (m in 1:orgs) {
+			#tot[m+orgs]<<-0
+			for (n in 1:orgs) {
+				tmpsum <<- 0 
+				#print(paste(k-10,forgh[n,k-10]))
+				if ( forgh[ n ,( k-10 )] > graz[1,k,m] ) {
+					graz[1,k-10,m] <<- tmpsum+as.numeric(graz[2,k,m])*forgh[n,k-10]
+				}
+			}
+			
+		}			
+	}	
+	for (k in 1:5) {
+		for (m in 1:orgs) {
+			tot[m+orgs]<<-0
+			for (n in 1:num) {
+				if ( f[n,k] > graz[1,k,m] ) {
+					graz[2+n,k,m] <<- as.numeric(graz[2,k,m])*f[n,k]
+				}
+				if(k==5) {
+					graz[2+n,6,m] <<- sum(graz[2+n,1:5,m])
+					tot[m+orgs] <<- tot[m]+sum(graz[2+n,1:5,m])
+				}
+			}
+		}			
+	}
+	for (m in 1:orgs) {
+		for (n in 1:num) {
+			graz[2+n,9,m] <<- graz[2+n,7,m]
+			temp <- 0
+			if (tot[m+orgs]*tamt[m+orgs]/s[n,29] > 0) {
+				temp <- graz[2+n,6,m]/tot[m+orgs]*tamt[m+orgs]/s[n,29]
+			}
+			if ( round(temp) < limit) {
+				graz[2+n,7,m] <<- round(temp)
+			}
+			else {
+				graz[2+n,7,m] <<- round(graz[2+n,6,m]/tot[m+orgs]*limit)
+			}
+			graz[2+n,8,m] <<- graz[2+n,7,m]*s[n,30] #invests according to today's price
+		}
+		amt[m+orgs] <<- 0
+		if (tamt[m+orgs] > sum(graz[,8,m])*0.99 && tamt[m+orgs] > 0) {
+			amt[m+orgs] <<- sum(graz[,8,m])
+			tamt[m+orgs] <<- tamt[m+orgs]-amt[m+orgs]
+			flag[m+orgs] <<- 1
+		}
+	}
+	#print(tamt[1:orgs])
+	
+}
+
+
+######################
+#thinkerers increment#
+######################
+orsuperduper<-function(tl) {
+	if(tl==1) {
+		for (i in 1:orgs) { ##setup factors, first threshold then weighting
+			for (j in 1:2) {
+				tnkr[j,1:5,i] <<- cbind(runif(5))*cbind(runif(5)) #stock selection facs
+			}
+			for (j in 1:4) {
+				tnkr[j,11:15,i] <<- cbind(runif(5))*cbind(runif(5)) #selection factors
+			}
+		}
+	}	
+	if (tl>1) {
+		for (i in 1:orgs) { #sell all
+			if (flag[i+orgs*2] == 1) {
+				for (n in 1:num) {
+					tamt[i+orgs*2] <<- tamt[i+orgs*2]+tnkr[2+n,7,i]*f[n,6]
+					flag[i+orgs*2] <<- 0
+				}
+			}
+		}
+	}
+	##first search for best strategy
+	###
+	#first update grazer weights
+	###
+	for (k in 11:15) {
+		for (m in 1:orgs) {
+			divfac1 <<- 0 
+			divfac2 <- 0 
+			for (n in 1:orgs) {
+				tmpsum <<- 0 
+				#print(paste(k-10,forgh[n,k-10]))
+				if ( fgrazh[ n ,( k-10 )] > tnkr[1,k,m] ) {
+					tnkr[1,k-10,m] <<- tmpsum+as.numeric(tnkr[3,k,m])*fgrazh[n,k-10]
+				}
+				if ( fgrazh[ n ,( k-10 )] > tnkr[2,k,m] ) {
+					tnkr[2,k-10,m] <<- tmpsum+as.numeric(tnkr[4,k,m])*fgrazh[n,k-10]
+				}
+			}
+		}			
+	}
+	##^weight each strategy, add together for factor search. 
+	## not quite the all encompassing search
+	##use this strategy as current search factors
+	#for (k in 11:15) {
+	#	for (m in 1:orgs) {
+	#		#tot[m+orgs]<<-0
+	#		for (n in 1:orgs) {
+	#			tmpsum <<- 0 
+	#			#print(paste(k-10,forgh[n,k-10]))
+	#			if ( forgh[ n ,( k-10 )] > tnkr[1,k,m] ) {
+	#			tnkr[1,k-10,m] <<- tmpsum+as.numeric(tnkr[2,k,m])*forgh[n,k-10]
+	#			}
+	#		}
+	#		
+	#	}		
+	#}
+	#print(tnkr[2,k-10,orgs])
+	##find corresponding grazer a best strategy based on this
+	##do all the financial stuff
+	for (k in 1:5) {
+		for (m in 1:orgs) {
+			tot[m+orgs*2]<<-0
+			tnkrt <<- tnkr[1,k,m]
+			#print(tnkrt)
+			for (n in 1:num) {
+				if ( f[n,k] > tnkrt ) {
+					tnkr[2+n,k,m] <<- as.numeric(tnkr[2,k,m])*f[n,k]
+				}
+				if(k==5) {
+					tnkr[2+n,6,m] <<- sum(tnkr[2+n,1:5,m])
+					tot[m+orgs*2] <<- tot[m+orgs*2]+sum(tnkr[2+n,1:5,m])
+				}
+			}
+		}			
+	}
+	for (m in 1:orgs) {
+		for (n in 1:num) {
+			tnkr[2+n,9,m] <<- tnkr[2+n,7,m]
+			temp <- 0
+			if (tot[(m+orgs*2)]*tamt[(m+orgs*2)]/s[n,29] > 0) {
+				temp <- tnkr[2+n,6,m]/tot[(m+orgs*2)]*tamt[(m+orgs*2)]/s[n,29]
+			}
+			if ( round(temp) < limit) {
+				tnkr[2+n,7,m] <<- round(temp)
+			}
+			else {
+				tnkr[2+n,7,m] <<- round(tnkr[2+n,6,m]/tot[m+orgs*2]*limit)
+			}
+			tnkr[2+n,8,m] <<- tnkr[2+n,7,m]*s[n,30] #invests according to today's price
+		}
+		amt[m+orgs*2] <<- 0
+		if (tamt[m+orgs*2] > sum(tnkr[,8,m])*0.99 && tamt[m+orgs*2] > 0) {
+			amt[m+orgs*2] <<- sum(tnkr[,8,m])
+			tamt[m+orgs*2] <<- tamt[m+orgs*2]-amt[m+orgs*2]
+			flag[m+orgs*2] <<- 1
+		}
+	}
+}
+
+
+check <- function() {
+	#check() is valid for org[] only!
+	#print(snum[1,30])
+	for (i in 1:orgs) { #sell all
+		if ( round(amt[i]+tamt[i]) <= start*0.9 ) { 
+			averagevals <-array(0,c(2,5))
+			count <- 0
+			startnum <-0
+			for (j in 1:2) {
+				for (k in 1:orgs) {
+					if (k != i) {
+						#q <- max(tamt[orgs:orgs*2])
+						q <- max(tamt[orgs:(orgs+orgs)])
+						q2 <- max(tamt[1:orgs])
+						if ((tamt[k]+amt[k])==q2) {
+							startnum <- k 
+							for (k2 in 1:orgs) {
+								k2n <- k2+orgs
+								if ((tamt[k2n]+amt[k2n]) == q) {
+									averagevals[j,1:5] <- graz[j,1:5,k2] + org[j,1:5,k]
+								} 
+							}
+						}
+						
+					}
+					else {
+					averagevals[j,1:5] <- averagevals[j,1:5] + cbind(runif(5))*cbind(runif(5)) #mutate only once oops
+						count <- count + 1
+					}
+				}
+				org[j,1:5,i] <- averagevals[j,1:5]/20
+				forgh[j,8:12] <<- org[j,1:5,i]
+			}
+		  print(averagevals)
+			#print("new")
+			#amt[i] <<- start
+			amt[i] <<- 0
+			tamt[i] <<- start + amt[i]+tamt[i] #change to amt[i] to conserve money?
+			newgens <<- newgens + 1/orgs
+		}
+	}
+	###
+	#now for grazers
+	###
+	for (i in 1:orgs) { #sell all
+		if ( round(amt[i+orgs]+tamt[i+orgs]) <= start*0.9 ) { 
+			averagevals <-array(0,c(2,5))
+			count <- 0
+			startnum <-0
+			for (j in 1:2) {
+				for (k in 1:orgs) {
+					if (k != i) {
+						q <- max(tamt[orgs:(orgs+orgs)])
+						q2 <- max(tamt[1:orgs])
+						if ((tamt[k]+amt[k])==q2) {
+							startnum <- k 
+							for (k2 in 1:orgs) {
+								k2n <- k2+orgs
+								if ((tamt[k2n]+amt[k2n]) == q) {
+									averagevals[j,1:5] <- graz[j,1:5,k2] + org[j,1:5,k2]
+								} 
+							}
+						}		
+					}
+					else {
+						averagevals[j,1:5] <- averagevals[j,1:5] #+ cbind(runif(5))*cbind(runif(5)) #mutate only once
+						count <- count + 1
+					}
+				}
+				graz[j,11:15,i] <- averagevals[j,1:5]/20*2/3
+			}
+		  print(averagevals)
+			amt[i+orgs] <<- 0
+			tamt[i+orgs] <<- start + amt[i+orgs]+tamt[i+orgs]
+			newgens <<- newgens + 1/orgs
+		}
+	}
+	###
+	#now for thinkerers
+	###
+	for (i in 1:orgs) { #sell all
+		if ( round(amt[i+orgs*2]+tamt[i+orgs*2]) <= start*0.9 ) { 
+			averagevals <-array(0,c(2,5))
+			count <- 0
+			startnum <-0
+			for (j in 1:2) {
+				for (k in 1:orgs) {
+					if (k != i) {
+						q3 <- max(tamt[(orgs*2):(orgs*3)])
+						q <- max(tamt[(orgs):(orgs*2)])
+						q2 <- max(tamt[1:orgs])
+						if ((tamt[k]+amt[k])==q2) {
+							startnum <- k 
+							for (k2 in 1:orgs) {
+								k2n <- k2+orgs
+								if ((tamt[k2n]+amt[k2n]) == q) {
+									for (k3 in 1:orgs) {
+										if ((tamt[(k3+orgs*2)]+amt[(k3+orgs*2)]) == q3) {
+											averagevals[j,1:5] <- graz[j,1:5,k2] + org[j,1:5,k]+tnkr[j,1:5,k3]
+										}
+									}
+								} 
+							}
+						}		
+					}
+					else {
+						averagevals[j,1:5] <- averagevals[j,1:5] #+ cbind(runif(5))*cbind(runif(5)) #mutate only once
+						count <- count + 1
+					}
+				}
+				tnkr[j,11:15,i] <- averagevals[j,1:5]/20
+				tnkr[j+2,11:15,i] <- averagevals[j,1:5]/20
+			}
+		  print(averagevals)
+			amt[i+orgs*2] <<- 0
+			tamt[i+orgs*2] <<- start + amt[i+orgs*2]+tamt[i+orgs*2]
+			newgens <<- newgens + 1/orgs #OVERESTIMATES
+		}
+	}
+}
+
+#for now allow negative tamt..but it's kind of having a negative bank account. Interest must be charged if this is allowed. Also, work to include changing risk factor
+cyc<-100
+for (t in 1:cyc) {
+	for (i in 1:num) {
+		for (j in 1:29) {
+			s[i,j]<-s[i,j+1]  ##bottom is most recent value
+			snum[i,j]<-snum[i,j+1] 
+			pnum[i,j]<-pnum[i,j+1]   ##bottom is most recent value
+		}
+		snum[i,30] <- snum[i,29]
+		pnum[i,30] <- cbind(runif(1))*fac^2 ##only random factor ^orgs have limited effect on total market price
+		s[i,30] <- pnum[i,30]/snum[i,30]
+	}
+	f <- up(s,num) #most time is spent here - in fft and fractaldim, probably
+	##I think this is valid here - because the current price is used to make a decision about the next decision using flag[]. This decision is made without prior knowledge of the next price.
+	or(t)
+	#print("section 1, pricing section ok ok")
+	for (i in 1:num) {
+		for (j in 1:orgs) {
+			if (flag[j+orgs] == 1) {
+				snum[i,30] <- snum[i,30] + graz[2+i,7,j] - graz[2+i,9,j]
+			}
+			if (flag[j] == 1) {
+				snum[i,30] <- snum[i,30] + org[2+i,7,j] - org[2+i,9,j]
+			}
+		}
+		if (snum[i,30] < 100) {
+			snum[i,30] <- 100
+		}
+	}
+	#print("number of stocks movement ok")
+	for (i in 1:orgs) {
+		for (j in 1:29) {
+			orgh[i,j]<-orgh[i,j+1]
+			grazh[i,j]<-grazh[i,j+1]
+			tnkrh[i,j]<-tnkrh[i,j+1]
+		}
+		orgh[i,30] <- amt[i]+tamt[i]
+		grazh[i,30] <- amt[i+orgs]+tamt[i+orgs]
+		tnkrh[i,30] <- amt[(i+orgs*2)]+tamt[(i+orgs*2)]
+	}
+	#print("historical orgs ok")
+	check()
+	#print("breed ok")
+	forgh[,1:7] <- up(orgh,orgs)
+	#print("forgh increment ok")
+	#print("fgrazh increment ok")
+	
+	#print("ftnkrh increment ok")
+	fgrazh[,1:7] <- up(grazh,orgs)
+	ftnkrh[,1:7] <- up(tnkrh,orgs)
+	orsuper(t)
+	#print("orsuper ok")
+	orsuperduper(t)
+	#print("orsuperduper ok")
+	print(amt[1:(orgs*3)]+tamt[1:(orgs*3)]) ##MAKE SURE THAT THIS ISN'T JUST PREDICTING THE CURRENT PRICE!!!
+	#print(tnkr[1:4,1:15,1])
+	print(t)
+	print(paste(s[,30],snum[,30]))
+}
+#print(s[,26:30])
+#print(snum[,26:30])
+#print(orgh[,])
+#print(org[,,])
+#print(f)
+#print(graz)
+print(paste("succeeding generations/day",paste((1-newgens/cyc)*100,"%",sep="")))
+print(paste("amount invested",newgens*orgs*start+start*orgs))
+print(paste("profit",(sum(orgh[,30])+sum(grazh[,30])+sum(tnkrh[,30])-newgens*orgs*start*3-start*orgs*3)))
+print(paste("profit/invested",(sum(orgh[,30])+sum(grazh[,30])+sum(tnkrh[,30])-newgens*orgs*start*3-start*orgs*3)/100))
+print(paste("orgs/stocks",paste(orgs*3,num,sep="/")))
+
+
